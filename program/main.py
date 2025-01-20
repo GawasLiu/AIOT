@@ -1,6 +1,7 @@
 import cv2
 import time
 import numpy as np
+import serial
 from ultralytics import YOLO
 
 # 初始化 YOLO 模型
@@ -16,6 +17,10 @@ DETECTION_TIME = 3   # 行人進入等待區後轉綠燈的時間（秒）
 # 初始化攝影機
 cap = cv2.VideoCapture(0)
 # 用OBS的虛擬相機，此程式對應路口網址(https://tcnvr3.taichung.gov.tw/983191db)
+
+# 初始化 Arduino 連接
+arduino = serial.Serial('COM3', 9600, timeout=1)  # 根據實際連接的 COM 埠號調整
+
 
 def rotate_frame(frame, angle):
     """將影像以中心為軸旋轉指定角度"""
@@ -35,6 +40,22 @@ def rotate_frame(frame, angle):
     rotated = cv2.warpAffine(frame, M, (new_w, new_h), borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
     return rotated
 
+def get_state_from_sensor():
+    """從 Arduino 接收感測區內是否有人"""
+    if arduino.in_waiting > 0:
+        try:
+            sensor = int(arduino.readline().decode('utf-8').strip())
+            return sensor
+        except ValueError:
+            pass
+    return None
+
+def send_light_state_to_arduino(state):
+    """當燈號改變時，將狀態字符 ('g' 或 'r') 傳回 Arduino"""
+    if state == "GREEN":
+        arduino.write(b'g')
+    elif state == "RED":
+        arduino.write(b'r')
 
 def detect_objects(frame, model, classes):
     """使用 YOLO 模型偵測特定類別物件。"""
@@ -50,7 +71,6 @@ def detect_objects(frame, model, classes):
                 objects.append((cls, x_min, y_min, x_max, y_max, conf))
     return objects
 
-
 def draw_bounding_boxes(frame, objects, color_map):
     """在影像上繪製邊框，並正確顯示類別標籤。"""
     for obj in objects:
@@ -61,9 +81,11 @@ def draw_bounding_boxes(frame, objects, color_map):
         cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), color, 2)  # 繪製邊框
         cv2.putText(frame, label, (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)  # 繪製標籤
 
+def check_pedestrian_in_zone(objects, zone, sensor):
+    """檢查行人是否在等待區內，排除騎機車的行人，並根據距離條件判斷。"""
+    if not sensor:
+        return False
 
-def check_pedestrian_in_zone(objects, zone):
-    """檢查行人是否在等待區內，排除騎機車的行人。"""
     motorcycles = [(x_min, y_min, x_max, y_max) for cls, x_min, y_min, x_max, y_max, conf in objects if cls == 3]  # 機車類別為 3
     for obj in objects:
         cls, x_min, y_min, x_max, y_max, conf = obj
@@ -77,7 +99,6 @@ def check_pedestrian_in_zone(objects, zone):
                         return False
                 return True
     return False
-
 
 def traffic_light_control(state, pedestrian_detected, detection_start_time, pedestrian_in_zone, start_time):
     """模擬紅綠燈控制邏輯。"""
@@ -105,7 +126,6 @@ def traffic_light_control(state, pedestrian_detected, detection_start_time, pede
 
     return state, detection_start_time, pedestrian_in_zone, start_time
 
-
 def process_frame(state, start_time, detection_start_time, pedestrian_in_zone, color_map):
     while cap.isOpened():
         ret, frame = cap.read()
@@ -118,10 +138,20 @@ def process_frame(state, start_time, detection_start_time, pedestrian_in_zone, c
         objects = detect_objects(rotated_frame, yolo_model, classes=[0, 2, 3])
         draw_bounding_boxes(rotated_frame, objects, color_map)
 
-        pedestrian_detected = check_pedestrian_in_zone(objects, WAITING_ZONE)
+        # 從 Arduino 獲取距離
+        sensor_state = get_state_from_sensor()
+        if sensor_state is None:
+            continue
+
+        pedestrian_detected = check_pedestrian_in_zone(objects, WAITING_ZONE, sensor_state)
+        prev_state = state
         state, detection_start_time, pedestrian_in_zone, start_time = traffic_light_control(
             state, pedestrian_detected, detection_start_time, pedestrian_in_zone, start_time
         )
+
+        # 當燈號改變時，傳送狀態到 Arduino
+        if state != prev_state:
+            send_light_state_to_arduino(state)
 
         # 繪製等待區
         cv2.rectangle(rotated_frame, WAITING_ZONE[0], WAITING_ZONE[1], (0, 0, 255) if state == "RED" else (0, 255, 0), 2)
@@ -146,7 +176,6 @@ def process_frame(state, start_time, detection_start_time, pedestrian_in_zone, c
     cap.release()
     cv2.destroyAllWindows()
 
-
 def main():
     state = "RED"
     start_time = time.time()
@@ -160,7 +189,6 @@ def main():
     }
 
     process_frame(state, start_time, detection_start_time, pedestrian_in_zone, color_map)
-
 
 if __name__ == "__main__":
     main()
