@@ -1,16 +1,9 @@
 import cv2
 import time
-import mediapipe as mp
-import serial
+from ultralytics import YOLO
 
-# 初始化串口
-ser = serial.Serial('COM3', 9600, timeout=1)
-time.sleep(1)
-
-# 初始化 MediaPipe 模組
-mp_pose = mp.solutions.pose
-pose = mp_pose.Pose()
-mp_drawing = mp.solutions.drawing_utils
+# 初始化 YOLO 模型
+yolo_model = YOLO('yolov8n.pt')
 
 # 等待區的區域座標（畫面中設定的矩形區域）
 WAITING_ZONE = [(10, 10), (630, 470)]
@@ -31,18 +24,21 @@ while cap.isOpened():
     if not ret:
         break
 
-    # 偵測行人
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = pose.process(rgb_frame)
+    # 使用 YOLO 模型偵測行人
+    results = yolo_model.predict(frame)  # 推理，回傳結果物件
+    detections = results[0].boxes  # 獲取框物件（如果存在）
 
     # 判斷行人是否進入等待區
     pedestrian_detected = False
-    if results.pose_landmarks:
-        for lm in results.pose_landmarks.landmark:
-            x, y = int(lm.x * frame.shape[1]), int(lm.y * frame.shape[0])
-            if WAITING_ZONE[0][0] < x < WAITING_ZONE[1][0] and WAITING_ZONE[0][1] < y < WAITING_ZONE[1][1]:
-                pedestrian_detected = True
-                break
+    if detections is not None:
+        for box in detections:
+            cls = int(box.cls[0])  # 取得類別
+            if cls == 0:  # 類別 0 表示行人
+                x_min, y_min, x_max, y_max = map(int, box.xyxy[0])  # 取得框座標
+                x_center, y_center = (x_min + x_max) / 2, (y_min + y_max) / 2
+                if WAITING_ZONE[0][0] < x_center < WAITING_ZONE[1][0] and WAITING_ZONE[0][1] < y_center < WAITING_ZONE[1][1]:
+                    pedestrian_detected = True
+                    break
 
     # 狀態切換邏輯
     if state == "RED":
@@ -85,10 +81,6 @@ while cap.isOpened():
         if not pedestrian_detected:
             time_left = int(RED_LIGHT_TIME - (time.time() - start_time))
             cv2.putText(frame, f"Switching to RED in: {time_left}s", (15, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-    # 顯示人體骨架
-    if results.pose_landmarks:
-        mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 
     # 顯示畫面
     cv2.imshow("Pedestrian Detection", frame)
