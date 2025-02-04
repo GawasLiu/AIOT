@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交通燈歷史紀錄</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 20px;
+            color: #333;
+        }
+        h1, h2 {
+            text-align: center;
+            color: #4CAF50;
+        }
+        table {
+            width: 80%;
+            margin: 20px auto;
+            border-collapse: collapse;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 12px;
+            text-align: center;
+        }
+        th {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .chart {
+            text-align: center;
+            margin-top: 30px;
+        }
+        img {
+            width: 100%;
+            max-width: 800px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 50px;
+            font-size: 14px;
+            color: #888;
+        }
+        .traffic-light-icon {
+            width: 40px;
+            vertical-align: middle;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>交通燈歷史紀錄</h1>
+    
+
+    <h2>最近的燈號狀態</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>時間戳記</th>
+                <th>燈號狀態</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if records %}
+                {% for record in records %}
+                <tr>
+                    <td>{{ record[0] }}</td>  <!-- 顯示時間戳 -->
+                    <td>                      
+                        {{ record[1] }}  <!-- 顯示燈號狀態 -->
+                    </td>
+                    
+                </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td colspan="3">目前沒有資料可顯示。</td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+    
+
+    
+
+    <div class="footer">
+        <p>&copy; 2025 交通系統管理部門. 所有權利保留。</p>
+    </div>
+</body>
+</html>
